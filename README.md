@@ -1,3 +1,11 @@
+№Запуск
+
+docker-compose up --build
+
+
+Все финальные файлы будут выполнены в корректном порядке
+
+
 # Docker Compose
 
 docker-compose up --build
