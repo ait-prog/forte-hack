@@ -30,8 +30,31 @@ data = pd.read_csv('data/merged_data.csv')
 engineer = fe_mod.FraudFeatureEngineer(data)
 processed, features = engineer.run_feature_engineering()
 processed.to_csv('data/processed_features.csv', index=False)
+
+with open('data/feature_list.txt', 'w') as f:
+    f.write('\n'.join(features))
 print('Feature engineering done')
 "
 
 echo ""
-echo "=== DONE ==="
+echo "=== TRAINING CATBOOST ==="
+python src/03_train_catboost.py
+
+echo ""
+echo "=== TRAINING NEURAL NETWORK ==="
+python src/04_train_neural_network.py
+
+echo ""
+echo "=== TRAINING PRODUCTION MODEL ==="
+python src/prod_model.py
+
+echo ""
+echo "=== FINAL ENSEMBLE ==="
+python src/07_final_ensemble.py
+
+echo ""
+echo "=== SHAP ENSEMBLE ANALYSIS ==="
+python src/08_shap_ensemble.py
+
+echo ""
+echo "=== PIPELINE COMPLETE ==="
