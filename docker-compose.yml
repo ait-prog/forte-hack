@@ -11,4 +11,11 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONIOENCODING=utf-8
+      - TF_CPP_MIN_LOG_LEVEL=2
     command: /app/run_pipeline.sh
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
