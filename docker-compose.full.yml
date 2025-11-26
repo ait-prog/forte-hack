@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  fraud-detection-full:
+    build: .
+    container_name: fraud-detection-full-pipeline
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+      - ./models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONIOENCODING=utf-8
+      - TF_CPP_MIN_LOG_LEVEL=2
+    command: /app/run_pipeline.sh
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
