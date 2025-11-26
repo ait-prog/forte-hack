@@ -1,4 +1,4 @@
-№Запуск
+# Запуск
 
 docker-compose up --build
 
