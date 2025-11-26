@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  fraud-detection:
+    build: .
+    container_name: fraud-detection-pipeline
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+      - ./models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONIOENCODING=utf-8
+    command: /app/run_pipeline.sh
