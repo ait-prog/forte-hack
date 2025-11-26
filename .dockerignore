@@ -15,9 +15,13 @@ ENV/
 .git/
 .gitignore
 *.md
+!README_DOCKER_FULL.md
 trash/
-outputs/*.png
-outputs/*.csv
-models/*
-!models/.gitkeep
+outputs/
+models/
 *.log
+app.py
+analyze_accuracy.py
+model_comparison_report.md
+criteria_compliance_analysis.md
+ensemble_shap_analysis.md
