@@ -131,10 +131,7 @@ class FraudFeatureEngineer:
                 df[f'{col}_encoded'] = le.fit_transform(df[col].astype(str))
                 self.label_encoders[col] = le
         
-        target_mean = df.groupby('direction')['target'].mean().rename('recipient_fraud_rate')
-        df = df.merge(target_mean, left_on='direction', right_index=True, how='left')
-        
-        print(f"encoded: {len(categorical_cols) + 1}")
+        print(f"encoded: {len(categorical_cols)}")
         return df
     
     def select_features(self):
@@ -148,8 +145,7 @@ class FraudFeatureEngineer:
                         'amount_deviation_from_mean', 'is_unusual_amount',
                         'client_trans_count', 'client_unique_recipients',
                         'recipient_frequency_ratio', 'recipient_popularity',
-                        'recipient_avg_amount', 'is_rare_recipient',
-                        'recipient_fraud_rate']
+                        'recipient_avg_amount', 'is_rare_recipient']
         
         behavioral_features = ['logins_last_7_days', 'logins_last_30_days',
                               'login_frequency_7d', 'login_frequency_30d',
@@ -205,4 +201,3 @@ if __name__ == "__main__":
         f.write('\n'.join(features))
     
     print("saved: data/processed_features.csv, data/feature_list.txt")
-
