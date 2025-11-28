@@ -1,7 +1,7 @@
 # Запуск
 
-docker-compose up --build
-
+docker-compose up --build  -> для автоматизации
+or run python app_flet.py 
 
 Все финальные файлы будут выполнены в корректном порядке
 
