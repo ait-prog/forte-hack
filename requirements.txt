@@ -12,3 +12,4 @@ xgboost==3.0.2
 imbalanced-learn==0.14.0
 streamlit==1.28.0
 plotly==5.17.0
+flet==0.24.1
