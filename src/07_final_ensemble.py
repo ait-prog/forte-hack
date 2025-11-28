@@ -21,13 +21,18 @@ class FinalEnsembleDetector:
         
     def load_models(self):
         from catboost import CatBoostClassifier
-        from tensorflow import keras
         
         self.catboost_model = CatBoostClassifier()
         self.catboost_model.load_model('models/catboost_model.cbm')
         
-        self.nn_model = keras.models.load_model('models/nn_model.h5')
-        self.scaler = joblib.load('models/nn_scaler.pkl')
+        try:
+            from tensorflow import keras
+            self.nn_model = keras.models.load_model('models/nn_model.h5')
+            self.scaler = joblib.load('models/nn_scaler.pkl')
+        except Exception as e:
+            print(f"nn model not available: {str(e)[:100]}")
+            self.nn_model = None
+            self.scaler = None
         
         prod_config = joblib.load('models/prod_models/config.pkl')
         self.prod_weights = prod_config['weights']
@@ -86,12 +91,19 @@ class FinalEnsembleDetector:
         X_clean = X_clean.fillna(X_clean.median())
         
         catboost_proba = self.catboost_model.predict_proba(X_clean)[:, 1]
-        X_scaled = self.scaler.transform(X_clean)
-        nn_proba = self.nn_model.predict(X_scaled, verbose=0).flatten()
+        
+        if self.nn_model is not None and self.scaler is not None:
+            X_scaled = self.scaler.transform(X_clean)
+            nn_proba = self.nn_model.predict(X_scaled, verbose=0).flatten()
+        else:
+            nn_proba = catboost_proba
+        
         prod_proba = self.predict_prod_ensemble(X_clean)
         
         if method == 'weighted_average':
             weights = weights or self.weights or [0.33, 0.33, 0.34]
+            if self.nn_model is None:
+                weights = [weights[0] + weights[1], 0.0, weights[2]]
             ensemble_proba = (weights[0] * catboost_proba + 
                             weights[1] * nn_proba + 
                             weights[2] * prod_proba)
@@ -104,15 +116,34 @@ class FinalEnsembleDetector:
         
         return ensemble_proba
     
-    def optimize_weights(self, X_val, y_val, beta=2):
+    def optimize_weights(self, X_val, y_val, beta=2, prioritize_recall=True):
         print("optimizing weights...")
         
-        best_fbeta = 0
-        best_weights = [0.33, 0.33, 0.34]
-        best_threshold = 0.5
+        X_val_clean = X_val.copy()
+        for col in X_val_clean.columns:
+            if not pd.api.types.is_numeric_dtype(X_val_clean[col]):
+                X_val_clean[col] = pd.to_numeric(X_val_clean[col], errors='coerce')
+        X_val_clean = X_val_clean.fillna(X_val_clean.median())
         
-        for w1 in np.arange(0.0, 1.01, 0.1):
-            for w2 in np.arange(0.0, 1.01 - w1, 0.05):
+        catboost_proba = self.catboost_model.predict_proba(X_val_clean)[:, 1]
+        
+        thresholds = np.arange(0.1, 0.9, 0.05)
+        catboost_results = [(t, recall_score(y_val, (catboost_proba >= t).astype(int)),
+                           fbeta_score(y_val, (catboost_proba >= t).astype(int), beta=beta))
+                          for t in thresholds]
+        catboost_best = max(catboost_results, key=lambda x: x[1] * 0.7 + x[2] * 0.3 if prioritize_recall else x[2])
+        catboost_threshold = catboost_best[0]
+        catboost_recall = catboost_best[1]
+        catboost_fbeta = catboost_best[2]
+        
+        print(f"catboost optimal: threshold={catboost_threshold:.2f}, recall={catboost_recall:.4f}, fbeta={catboost_fbeta:.4f}")
+        
+        best_score = catboost_recall * 0.7 + catboost_fbeta * 0.3 if prioritize_recall else catboost_fbeta
+        best_weights = [1.0, 0.0, 0.0]
+        best_threshold = catboost_threshold
+        
+        for w1 in np.arange(0.5, 1.01, 0.1):
+            for w2 in np.arange(0.0, 1.01 - w1, 0.1):
                 w3 = 1.0 - w1 - w2
                 if w3 < 0:
                     continue
@@ -120,20 +151,34 @@ class FinalEnsembleDetector:
                 
                 ensemble_proba = self.predict_ensemble(X_val, weights=weights)
                 
-                for threshold in np.arange(0.2, 0.8, 0.05):
+                for threshold in np.arange(0.2, 0.7, 0.05):
                     ensemble_pred = (ensemble_proba >= threshold).astype(int)
+                    recall = recall_score(y_val, ensemble_pred)
                     fbeta = fbeta_score(y_val, ensemble_pred, beta=beta)
                     
-                    if fbeta > best_fbeta:
-                        best_fbeta = fbeta
+                    if prioritize_recall:
+                        score = recall * 0.7 + fbeta * 0.3
+                    else:
+                        score = fbeta
+                    
+                    if score > best_score:
+                        best_score = score
                         best_weights = weights
                         best_threshold = threshold
         
         self.weights = best_weights
         self.best_threshold = best_threshold
         
+        ensemble_proba_final = self.predict_ensemble(X_val, weights=best_weights)
+        ensemble_pred_final = (ensemble_proba_final >= best_threshold).astype(int)
+        final_recall = recall_score(y_val, ensemble_pred_final)
+        final_fbeta = fbeta_score(y_val, ensemble_pred_final, beta=beta)
+        
         print(f"weights: catboost={best_weights[0]:.2f}, nn={best_weights[1]:.2f}, prod={best_weights[2]:.2f}")
-        print(f"threshold: {best_threshold:.2f}, fbeta: {best_fbeta:.4f}")
+        print(f"threshold: {best_threshold:.2f}, recall: {final_recall:.4f}, fbeta: {final_fbeta:.4f}")
+        
+        if best_weights[0] >= 0.95:
+            print("using mostly catboost - best for recall")
         
         return best_weights, best_threshold
     
@@ -192,7 +237,25 @@ if __name__ == "__main__":
     
     ensemble = FinalEnsembleDetector()
     ensemble.load_models()
-    ensemble.optimize_weights(X_val, y_val, beta=2)
+    
+    X_val_clean = X_val.copy()
+    for col in X_val_clean.columns:
+        if not pd.api.types.is_numeric_dtype(X_val_clean[col]):
+            X_val_clean[col] = pd.to_numeric(X_val_clean[col], errors='coerce')
+    X_val_clean = X_val_clean.fillna(X_val_clean.median())
+    
+    catboost_proba = ensemble.catboost_model.predict_proba(X_val_clean)[:, 1]
+    thresholds = np.arange(0.1, 0.9, 0.05)
+    catboost_results = [(t, recall_score(y_val, (catboost_proba >= t).astype(int)),
+                       fbeta_score(y_val, (catboost_proba >= t).astype(int), beta=2))
+                      for t in thresholds]
+    catboost_best = max(catboost_results, key=lambda x: x[1] * 0.7 + x[2] * 0.3)
+    catboost_threshold = catboost_best[0]
+    
+    print(f"using catboost directly with threshold={catboost_threshold:.2f}")
+    ensemble.weights = [1.0, 0.0, 0.0]
+    ensemble.best_threshold = catboost_threshold
+    
     metrics = ensemble.evaluate(X_test, y_test)
     
     config = {
