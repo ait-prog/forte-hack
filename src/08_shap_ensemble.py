@@ -16,7 +16,6 @@ class EnsembleSHAPAnalyzer:
     
     def load_models(self):
         from catboost import CatBoostClassifier
-        from tensorflow import keras
         import lightgbm as lgb
         import xgboost as xgb
         from catboost import CatBoostClassifier as CB
@@ -24,8 +23,15 @@ class EnsembleSHAPAnalyzer:
         self.catboost_model = CatBoostClassifier()
         self.catboost_model.load_model('models/catboost_model.cbm')
         
-        self.nn_model = keras.models.load_model('models/nn_model.h5')
-        self.scaler = joblib.load('models/nn_scaler.pkl')
+        # Neural Network временно отключен
+        try:
+            from tensorflow import keras
+            self.nn_model = keras.models.load_model('models/nn_model.h5')
+            self.scaler = joblib.load('models/nn_scaler.pkl')
+        except Exception as e:
+            print(f"nn model not available (disabled): {str(e)[:100]}")
+            self.nn_model = None
+            self.scaler = None
         
         prod_config = joblib.load('models/prod_models/config.pkl')
         self.prod_weights = prod_config['weights']
@@ -44,8 +50,12 @@ class EnsembleSHAPAnalyzer:
             self.prod_feature_selector = None
             self.prod_selected_features = None
         
-        ensemble_config = joblib.load('models/final_ensemble_config.pkl')
-        self.ensemble_weights = ensemble_config['weights']
+        try:
+            ensemble_config = joblib.load('models/final_ensemble_config.pkl')
+            self.ensemble_weights = ensemble_config['weights']
+        except:
+            self.ensemble_weights = [1.0, 0.0, 0.0]
+            print("using default ensemble weights [1.0, 0.0, 0.0]")
     
     def prepare_data(self, X):
         X_clean = X.copy()
@@ -100,8 +110,12 @@ class EnsembleSHAPAnalyzer:
             weights = self.ensemble_weights
         
         w_catboost = weights[0]
-        w_nn = weights[1]
+        w_nn = weights[1] if self.nn_model is not None else 0.0
         w_prod = weights[2]
+        
+        if self.nn_model is None and len(weights) == 3:
+            w_catboost = weights[0] + weights[1]
+            w_prod = weights[2]
         
         w_lgb = self.prod_weights[0] * w_prod
         w_xgb = self.prod_weights[1] * w_prod
@@ -211,4 +225,5 @@ if __name__ == "__main__":
     )
     
     print("saved: outputs/")
+
 
